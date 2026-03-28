@@ -11,11 +11,16 @@ app.registerExtension({
 
         const MAX_DURATION = 20;
 
-        // --- Hide the video text field (we manage it via Upload button) ---
+        // --- Hide the video text field ---
         videoWidget.type = "hidden";
         videoWidget.computeSize = () => [0, -4];
-        const origDraw = videoWidget.draw;
         videoWidget.draw = function() { return; };
+
+        // --- Status widget (non-serialized, display only) ---
+        const statusWidget = node.addWidget("text", "status", 
+            videoWidget.value ? `Ready: ${videoWidget.value}` : "Click 'Upload Video' to begin",
+            () => {}, { serialize: false }
+        );
 
         // --- Preview holder ---
         let previewWidget = null;
@@ -32,15 +37,24 @@ app.registerExtension({
 
                 try {
                     // Check duration
+                    statusWidget.value = "Checking video duration...";
+                    node.setDirtyCanvas(true);
+
                     const duration = await getVideoDuration(file);
                     if (duration > MAX_DURATION) {
+                        statusWidget.value = `Too long: ${duration.toFixed(1)}s (max ${MAX_DURATION}s)`;
+                        node.setDirtyCanvas(true);
                         app.ui.dialog.show(
                             `Video is ${duration.toFixed(1)}s — max allowed is ${MAX_DURATION}s.\nPlease trim and try again.`
                         );
                         return;
                     }
 
-                    // Upload to ComfyUI input/
+                    // Upload
+                    const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+                    statusWidget.value = `Uploading ${file.name} (${sizeMB} MB)...`;
+                    node.setDirtyCanvas(true);
+
                     const fd = new FormData();
                     fd.append("image", file, file.name);
                     fd.append("type", "input");
@@ -48,6 +62,8 @@ app.registerExtension({
 
                     const resp = await fetch("/upload/image", { method: "POST", body: fd });
                     if (!resp.ok) {
+                        statusWidget.value = `Upload failed (HTTP ${resp.status})`;
+                        node.setDirtyCanvas(true);
                         app.ui.dialog.show(`Upload failed (HTTP ${resp.status})`);
                         return;
                     }
@@ -55,14 +71,19 @@ app.registerExtension({
                     const result = await resp.json();
                     const uploadedName = result.name || file.name;
 
-                    // Set the hidden string widget value
+                    // Only NOW set the widget value — guarantees file is on server
                     videoWidget.value = uploadedName;
+
+                    statusWidget.value = `Ready: ${uploadedName} (${duration.toFixed(1)}s)`;
+                    node.setDirtyCanvas(true);
 
                     // Show preview
                     showPreview(node, uploadedName);
 
                 } catch (e) {
                     console.error("[KlingV2A]", e);
+                    statusWidget.value = `Error: ${e.message}`;
+                    node.setDirtyCanvas(true);
                     app.ui.dialog.show(`Error: ${e.message}`);
                 }
             };
@@ -112,12 +133,9 @@ app.registerExtension({
             previewWidget = null;
         }
 
-        // Show preview on load if video is already set and file exists on this server
+        // Show preview on load if video is already set
         if (videoWidget.value) {
-            setTimeout(() => {
-                // Try to load preview — if file doesn't exist, it just won't show
-                showPreview(node, videoWidget.value);
-            }, 500);
+            setTimeout(() => showPreview(node, videoWidget.value), 500);
         }
 
         node.size[0] = Math.max(node.size[0], 350);
