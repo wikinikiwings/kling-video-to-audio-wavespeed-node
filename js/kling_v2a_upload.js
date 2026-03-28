@@ -11,10 +11,9 @@ app.registerExtension({
 
         const MAX_DURATION = 20;
 
-        // --- Completely hide the video dropdown ---
+        // --- Hide the video text field (we manage it via Upload button) ---
         videoWidget.type = "hidden";
         videoWidget.computeSize = () => [0, -4];
-        // Some ComfyUI versions ignore type="hidden" for combos
         const origDraw = videoWidget.draw;
         videoWidget.draw = function() { return; };
 
@@ -22,7 +21,7 @@ app.registerExtension({
         let previewWidget = null;
 
         // --- Upload Video button ---
-        const uploadBtn = node.addWidget("button", "upload_video_btn", "Upload Video", async () => {
+        node.addWidget("button", "upload_video_btn", "Upload Video", async () => {
             const input = document.createElement("input");
             input.type = "file";
             input.accept = "video/mp4,video/webm,video/x-matroska,video/quicktime,.mp4,.webm,.mkv,.mov";
@@ -41,7 +40,7 @@ app.registerExtension({
                         return;
                     }
 
-                    // Upload
+                    // Upload to ComfyUI input/
                     const fd = new FormData();
                     fd.append("image", file, file.name);
                     fd.append("type", "input");
@@ -56,11 +55,7 @@ app.registerExtension({
                     const result = await resp.json();
                     const uploadedName = result.name || file.name;
 
-                    // Update hidden combo value
-                    if (videoWidget.options?.values && !videoWidget.options.values.includes(uploadedName)) {
-                        videoWidget.options.values.push(uploadedName);
-                        videoWidget.options.values.sort();
-                    }
+                    // Set the hidden string widget value
                     videoWidget.value = uploadedName;
 
                     // Show preview
@@ -117,9 +112,12 @@ app.registerExtension({
             previewWidget = null;
         }
 
-        // Show preview on load if already selected
+        // Show preview on load if video is already set and file exists on this server
         if (videoWidget.value) {
-            setTimeout(() => showPreview(node, videoWidget.value), 500);
+            setTimeout(() => {
+                // Try to load preview — if file doesn't exist, it just won't show
+                showPreview(node, videoWidget.value);
+            }, 500);
         }
 
         node.size[0] = Math.max(node.size[0], 350);
