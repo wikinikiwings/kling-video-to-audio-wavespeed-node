@@ -213,9 +213,11 @@ class KlingVideo2Audio:
         asmr_mode: bool = False,
         api_key: str = "",
     ):
-        # Resolve file path
+        # Resolve file path — try annotated first, then direct input dir
         video_path = folder_paths.get_annotated_filepath(video)
         if not video_path or not os.path.isfile(video_path):
+            video_path = os.path.join(folder_paths.get_input_directory(), video)
+        if not os.path.isfile(video_path):
             raise FileNotFoundError(f"Video file not found: {video}")
 
         api_key = _resolve_api_key(api_key)
@@ -228,14 +230,30 @@ class KlingVideo2Audio:
 
     @classmethod
     def IS_CHANGED(cls, video, **kwargs):
-        video_path = folder_paths.get_annotated_filepath(video)
-        return _calculate_file_hash(video_path)
+        try:
+            video_path = folder_paths.get_annotated_filepath(video)
+            if os.path.isfile(video_path):
+                return _calculate_file_hash(video_path)
+        except Exception:
+            pass
+        # Also check directly in input directory
+        input_path = os.path.join(folder_paths.get_input_directory(), video)
+        if os.path.isfile(input_path):
+            return _calculate_file_hash(input_path)
+        return video
 
     @classmethod
     def VALIDATE_INPUTS(cls, video, **kwargs):
-        if not folder_paths.exists_annotated_filepath(video):
-            return f"Invalid video file: {video}"
-        return True
+        # Check annotated path first, then direct input path
+        try:
+            if folder_paths.exists_annotated_filepath(video):
+                return True
+        except Exception:
+            pass
+        input_path = os.path.join(folder_paths.get_input_directory(), video)
+        if os.path.isfile(input_path):
+            return True
+        return f"Video file not found: {video}"
 
 
 class KlingVideo2AudioURL:
